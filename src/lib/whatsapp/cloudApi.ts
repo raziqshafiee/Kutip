@@ -1,7 +1,7 @@
 import { prisma } from '../prisma'
 import type { Business, MessageChannel } from '../../generated/prisma/client'
 import { buildReminderPayload } from './templates'
-import { createMessageLog, markMessageSent, markMessageFailed } from './messageLog'
+import { createMessageLog, markMessageSent, markMessageSentWithProvider, markMessageFailed } from './messageLog'
 
 const GRAPH_BASE = 'https://graph.facebook.com/v19.0'
 
@@ -106,7 +106,11 @@ export async function dispatchReminder(
   if (business.whatsappChannel === 'CLOUD_API') {
     const result = await sendViaCloudApi(business, invoice.client.phoneE164, rendered)
     if (result.success) {
-      await markMessageSent(log.id)
+      if (result.messageId) {
+        await markMessageSentWithProvider(log.id, result.messageId)
+      } else {
+        await markMessageSent(log.id)
+      }
       return { sent: true }
     }
     await markMessageFailed(log.id)

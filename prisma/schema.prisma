@@ -148,8 +148,9 @@ model MessageLog {
   invoice   Invoice        @relation(fields: [invoiceId], references: [id])
   channel   MessageChannel
   template  String
-  status    DeliveryStatus @default(QUEUED)
-  sentAt    DateTime?
+  status            DeliveryStatus @default(QUEUED)
+  providerMessageId String?
+  sentAt            DateTime?
 
   @@index([invoiceId])
 }

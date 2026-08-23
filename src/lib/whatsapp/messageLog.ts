@@ -39,6 +39,20 @@ export async function markMessageSent(messageLogId: string): Promise<MessageLog>
   return updateMessageLogStatus(messageLogId, 'SENT')
 }
 
+/**
+ * Marks a message as sent and records the provider's message id so delivery
+ * webhooks can reconcile status by provider reference.
+ */
+export async function markMessageSentWithProvider(
+  messageLogId: string,
+  providerMessageId: string
+): Promise<MessageLog> {
+  return prisma.messageLog.update({
+    where: { id: messageLogId },
+    data: { status: 'SENT', providerMessageId },
+  })
+}
+
 export async function markMessageDelivered(messageLogId: string): Promise<MessageLog> {
   return updateMessageLogStatus(messageLogId, 'DELIVERED')
 }
