@@ -4,6 +4,7 @@ import type { InvoiceGenerateJob, ReminderDispatchJob } from './definitions'
 import { runDailySweep } from './sweep'
 import { DAILY_SWEEP_JOB, registerDailySweepCron } from './cron'
 import { dispatchReminderJob } from '../whatsapp/dispatcher'
+import { startQrWorkers } from '../whatsapp/qrWorker'
 
 /**
  * Registers the BullMQ workers for the invoicing core and starts them.
@@ -23,6 +24,9 @@ export async function startInvoicingWorkers(): Promise<void> {
   createWorker<ReminderDispatchJob>(REMINDER_QUEUE, async (job) => {
     await dispatchReminderJob(job.data)
   })
+
+  // Connect persistent QR-session sockets for QR-enabled businesses.
+  await startQrWorkers()
 }
 
 // Auto-start when this module is executed directly (e.g. `npm run workers`).
