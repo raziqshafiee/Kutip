@@ -9,10 +9,16 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prisma:migrate:test": "dotenv -e .env.test -- npx prisma migrate deploy",
+    "test:integration": "dotenv -e .env.test -- vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
     "next": "16.3.2",
+    "pg": "^8.23.0",
+    "prisma": "^7.9.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -24,6 +30,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.0",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
     "jsdom": "^30.0.1",

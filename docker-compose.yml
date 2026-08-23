@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: kutip_dev_password
       POSTGRES_DB: kutip_dev
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - kutip_postgres_data:/var/lib/postgresql/data
     healthcheck:
