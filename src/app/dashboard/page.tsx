@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { getOrCreateTenantForOrg } from '@/lib/tenant'
 
 export default async function DashboardPage() {
@@ -20,6 +21,12 @@ export default async function DashboardPage() {
         Your Kutip dashboard is ready. Billing, invoicing, and WhatsApp automation
         features are on the way.
       </p>
+      <Link
+        href="/dashboard/settings"
+        className="mt-6 inline-block rounded-full bg-zinc-900 px-5 py-3 text-white"
+      >
+        Configure Settings
+      </Link>
     </main>
   )
 }
