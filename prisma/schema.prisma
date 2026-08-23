@@ -8,11 +8,16 @@ datasource db {
 }
 
 model Business {
-  id         String   @id @default(cuid())
-  clerkOrgId String   @unique
-  name       String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                     String          @id @default(cuid())
+  clerkOrgId             String          @unique
+  name                   String
+  whatsappChannel        WhatsAppChannel @default(NONE)
+  cloudApiPhoneNumberId  String?
+  cloudApiAccessToken    String?
+  cloudApiTemplateName   String?
+  qrSessionId            String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
   clients      Client[]
   billingRules BillingRule[]
@@ -34,6 +39,12 @@ model Client {
   invoices Invoice[]
 
   @@index([tenantId])
+}
+
+enum WhatsAppChannel {
+  NONE
+  CLOUD_API
+  QR_SESSION
 }
 
 enum BillingFrequency {
