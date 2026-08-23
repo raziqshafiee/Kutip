@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { INVOICE_QUEUE, REMINDER_QUEUE } from '../invoice/definitions'
 import type { InvoiceGenerateJob, ReminderDispatchJob } from '../invoice/definitions'
 

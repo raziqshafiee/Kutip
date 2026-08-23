@@ -1,4 +1,4 @@
-﻿export const INVOICE_QUEUE = 'invoices'
+export const INVOICE_QUEUE = 'invoices'
 export const REMINDER_QUEUE = 'reminders'
 
 export type InvoiceGenerateJob = {

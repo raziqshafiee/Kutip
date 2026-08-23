@@ -1,4 +1,4 @@
-﻿import { prisma } from '../prisma'
+import { prisma } from '../prisma'
 import { findClientsDueForBilling, buildInvoiceForClient } from './generator'
 import { createInvoiceForClient, markOverdue } from './service'
 import { scheduleInvoiceReminders } from './reminders'

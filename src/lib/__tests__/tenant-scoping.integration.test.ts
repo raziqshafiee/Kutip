@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { prisma } from '../prisma'
 
 describe('tenant scoping', () => {

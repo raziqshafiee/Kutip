@@ -1,4 +1,4 @@
-﻿import type { Client, BillingFrequency } from '../../generated/prisma/client'
+import type { Client, BillingFrequency } from '../../generated/prisma/client'
 import { prisma } from '../prisma'
 
 export type DueInvoiceInput = {

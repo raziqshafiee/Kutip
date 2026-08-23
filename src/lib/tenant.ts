@@ -1,4 +1,4 @@
-﻿import { prisma } from './prisma'
+import { prisma } from './prisma'
 import type { Business } from '../generated/prisma/client'
 
 export async function getOrCreateTenantForOrg(

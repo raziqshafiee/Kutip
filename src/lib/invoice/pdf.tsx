@@ -1,4 +1,4 @@
-﻿import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
 import type { DocumentProps } from '@react-pdf/renderer'
 import { prisma } from '../prisma'
 import type { Invoice, Payment } from '../../generated/prisma/client'

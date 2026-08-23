@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prisma:migrate:test": "dotenv -e .env.test -- npx prisma migrate deploy",
-    "test:integration": "dotenv -e .env.test -- vitest run --config vitest.integration.config.ts"
+    "test:integration": "dotenv -e .env.test -- vitest run --config vitest.integration.config.ts",
+    "workers": "tsx src/lib/invoice/worker.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.8.0",
@@ -39,6 +40,7 @@
     "eslint-config-next": "16.3.2",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.12",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }
