@@ -16,6 +16,9 @@ model Business {
   cloudApiAccessToken    String?
   cloudApiTemplateName   String?
   qrSessionId            String?
+  toyyibpayUserSecretKey String?
+  toyyibpayCategoryCode  String?
+  toyyibpaySandbox       Boolean         @default(true)
   createdAt              DateTime        @default(now())
   updatedAt              DateTime        @updatedAt
 
@@ -94,13 +97,23 @@ model Invoice {
   @@unique([clientId, dueDate])
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
 model Payment {
-  id         String   @id @default(cuid())
-  invoiceId  String
-  invoice    Invoice  @relation(fields: [invoiceId], references: [id])
-  gatewayRef String
-  amount     Decimal  @db.Decimal(10, 2)
-  paidAt     DateTime @default(now())
+  id          String        @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  gatewayRef  String
+  amount      Decimal       @db.Decimal(10, 2)
+  status      PaymentStatus @default(PENDING)
+  externalRef String?
+  billCode    String?
+  hashValue   String?
+  paidAt      DateTime      @default(now())
 
   @@index([invoiceId])
 }
