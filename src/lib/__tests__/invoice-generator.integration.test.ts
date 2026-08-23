@@ -7,6 +7,10 @@ describe('findClientsDueForBilling (integration)', () => {
   let businessB: { id: string }
 
   beforeEach(async () => {
+    await prisma.messageLog.deleteMany()
+    await prisma.reminderJob.deleteMany()
+    await prisma.payment.deleteMany()
+    await prisma.invoice.deleteMany()
     await prisma.client.deleteMany()
     await prisma.billingRule.deleteMany()
     await prisma.business.deleteMany()

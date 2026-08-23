@@ -48,7 +48,7 @@ export async function findClientsDueForBilling(
   // A client is due when its cycle day equals the current day. Additionally,
   // when today is the last day of a month shorter than the client's cycle
   // day (e.g. day 31 in a 30-day month), the capped client is also due.
-  const OR: Array<{ billingCycleDay: { in: number[] } }> = [
+  const OR: Array<{ billingCycleDay: { in: number[] } | { gt: number } }> = [
     { billingCycleDay: { in: [dayOfMonth] } },
   ]
   if (dayOfMonth === monthLength) {

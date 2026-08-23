@@ -80,6 +80,7 @@ model Invoice {
   messages  MessageLog[]
 
   @@index([tenantId])
+  @@unique([clientId, dueDate])
 }
 
 model Payment {
