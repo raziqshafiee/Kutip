@@ -1,6 +1,7 @@
 import { prisma } from '../prisma'
 import { verifyCallbackHash } from './toyyibpay'
 import { generateReceiptPdf } from '../invoice/pdf'
+import { dispatchPaymentConfirmation } from './receiptDispatch'
 
 export type ToyyibPayCallback = {
   billcode: string
@@ -75,8 +76,9 @@ export async function reconcilePayment(
     }),
   ])
 
-  // Generate the receipt PDF (actual WhatsApp dispatch is wired in Task 5).
+  // Generate the receipt PDF and dispatch the WhatsApp confirmation.
   await generateReceiptPdf(payment.id)
+  await dispatchPaymentConfirmation(payment.id)
 
   return { handled: true }
 }

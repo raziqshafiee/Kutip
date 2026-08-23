@@ -25,9 +25,7 @@ export function formatMYR(amount: number): string {
 /**
  * Assembles the WhatsApp template variable set for a reminder tied to an
  * invoice. Loads the invoice, its client, and the owning business.
- *
- * The payment link is a placeholder until the Payments plan supplies real
- * checkout URLs.
+ * The payment link points to the public invoice page.
  */
 export async function buildReminderPayload(
   invoiceId: string,
@@ -42,11 +40,13 @@ export async function buildReminderPayload(
     },
   })
 
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'
+
   const vars: TemplateVars = {
     client_name: invoice.client.name,
     amount: formatMYR(invoice.amount.toNumber()),
     service_name: invoice.client.serviceTier ?? invoice.client.business.name,
-    payment_link: '#placeholder-payment-link',
+    payment_link: `${baseUrl}/invoices/${invoice.id}`,
   }
 
   const text =
