@@ -7,5 +7,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['src/lib/__tests__/*.integration.test.ts'],
+    fileParallelism: false,
   },
 })

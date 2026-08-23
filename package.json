@@ -14,6 +14,7 @@
     "test:integration": "dotenv -e .env.test -- vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.8.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "next": "16.3.2",
