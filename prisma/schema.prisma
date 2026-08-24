@@ -58,15 +58,13 @@ enum BillingFrequency {
 
 model BillingRule {
   id              String            @id @default(cuid())
-  tenantId        String
+  tenantId        String            @unique
   business        Business          @relation(fields: [tenantId], references: [id])
   frequency       BillingFrequency
   gracePeriodDays Int               @default(0)
   lateFeeAmount   Decimal?          @db.Decimal(10, 2)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
-
-  @@index([tenantId])
 }
 
 enum InvoiceStatus {
