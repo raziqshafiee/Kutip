@@ -93,11 +93,11 @@
 - Modify: `docker-compose.prod.yml` (optional backup cron sidecar)
 
 **Interfaces:**
-- Produces: a scheduled `pg_dump` to off-site storage (Backblaze B2 / S3-compatible).
+- Produces: a scheduled `pg_dump` to off-site storage (DigitalOcean Spaces, S3-compatible).
 - Produces: a documented restore procedure.
 
 **Steps:**
-- [ ] **Step 1:** Write a backup script that runs `pg_dump` and uploads to B2/S3 (using `rclone` or `awscli`).
+- [ ] **Step 1:** Write a backup script that runs `pg_dump` and uploads to a DigitalOcean Spaces bucket (using `rclone` or `awscli` against the Spaces S3-compatible endpoint).
 - [ ] **Step 2:** Schedule it via cron (daily, retaining N days).
 - [ ] **Step 3:** Write and **test** the restore script against a fresh container.
 - [ ] **Step 4:** Document the runbook.
@@ -149,6 +149,6 @@
 
 ## Open questions / decisions for the user
 
-- Domain name choice (Namecheap free 1-year domain).
-- Backup storage provider (Backblaze B2 vs S3).
-- Whether to defer Stripe/plan-tier billing to a later milestone (recommended).
+- Domain name choice (Namecheap free 1-year domain via GitHub Student Developer Pack).
+- Backup storage provider: **DigitalOcean Spaces** (S3-compatible), using the GitHub Student Developer Pack's DigitalOcean credit — same provider as the droplet, same credit pool. `scripts/backup.sh` uses `rclone` (or `awscli` with the S3-compatible endpoint) against a Spaces bucket.
+- Stripe / plan-tier billing: **deferred**. This plan does not include merchant subscription billing — the app remains free-to-use for now. Revisit as a separate future plan once the core loop is validated with real merchants.
