@@ -123,7 +123,7 @@ services:
     volumes:
       - kutip_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -178,7 +178,7 @@ volumes:
   kutip_qr_sessions:
 ```
 
-Note: `${POSTGRES_USER}` in the `postgres` service's `healthcheck` is expanded by the **shell inside the container** at healthcheck-run time (from the environment `env_file` already injected), not by Docker Compose's own file-level variable substitution — no separate `.env` file or `--env-file` flag is needed for this to work.
+Note: this uses `$$POSTGRES_USER` (a doubled `$`), not `${POSTGRES_USER}`. Docker Compose's own `${VAR}` interpolation only reads a literal `.env` file in the project directory (or `--env-file`) — it does **not** read anything referenced via `env_file:`, which only injects variables into the *container's* runtime environment. Since this stack's only source of `POSTGRES_USER` is `.env.production` via `env_file:`, an unescaped `${POSTGRES_USER}` would resolve to an empty string at the Compose level, producing `pg_isready -U ` (no argument) — a broken healthcheck that fails forever and blocks `app`/`worker` from ever starting (both gate on `postgres: condition: service_healthy`). `$$` tells Compose to pass a literal `$POSTGRES_USER` through untouched, so it's expanded by the shell *inside the container* at healthcheck-run time instead, using the value `env_file` already injected there. (An earlier draft of this note had this backwards — corrected after the final review caught it by inspecting the actual resolved Compose output, not just the exit code.)
 
 `RUN_INVOICING_WORKERS=1` is required for `worker.ts`'s auto-start guard (`src/lib/invoice/worker.ts:33`) to actually call `startInvoicingWorkers()` when run via `tsx`.
 
@@ -191,7 +191,13 @@ echo 'POSTGRES_USER=kutip' > .env.production
 docker compose -f docker-compose.prod.yml config --quiet
 ```
 
-Expected: no output and exit code 0.
+Expected: no output and exit code 0. This only proves the YAML parses and every `env_file:` path exists — it does **not** prove `${VAR}`-style interpolation resolved correctly, since `--quiet` suppresses interpolation warnings along with everything else. Also inspect the actual resolved healthcheck command:
+
+```bash
+docker compose -f docker-compose.prod.yml config | grep -A2 "test:"
+```
+
+Expected: the postgres service's line reads `pg_isready -U $POSTGRES_USER` (a single `$`, literal — Compose has passed the doubled `$$` through as an escape, leaving one `$` for the container shell to expand at runtime). If it instead shows `pg_isready -U ` with nothing after `-U`, the `$$` escaping in the Dockerfile compose block above was lost — go back and fix it before continuing.
 
 - [ ] **Step 7: Commit**
 
@@ -262,7 +268,7 @@ The `app` service (Task 1) already uses `expose:` rather than `ports:`, so it st
 
 - [ ] **Step 3: Verify the compose file is still valid**
 
-Same caveat as Task 1 Step 5 — Compose requires the `env_file:`-referenced file to exist. A local `.env.production` stub should already exist from Task 1's verification (gitignored, untracked); if it doesn't (e.g. fresh checkout), recreate it first:
+Same caveat as Task 1 Step 6 — Compose requires the `env_file:`-referenced file to exist, and `--quiet` hides interpolation warnings, so this only proves the YAML parses (see Task 1 Step 6 for the deeper resolved-config check, which is what actually caught the `$$POSTGRES_USER` escaping bug). A local `.env.production` stub should already exist from Task 1's verification (gitignored, untracked); if it doesn't (e.g. fresh checkout), recreate it first:
 
 ```bash
 [ -f .env.production ] || echo 'POSTGRES_USER=kutip' > .env.production
