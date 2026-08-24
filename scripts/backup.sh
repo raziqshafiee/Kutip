@@ -14,7 +14,7 @@ RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 
 echo "[backup] Dumping ${POSTGRES_DB}..."
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "/tmp/${BACKUP_FILE}"
+  pg_dump --clean --if-exists -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "/tmp/${BACKUP_FILE}"
 
 export RCLONE_CONFIG_SPACES_TYPE=s3
 export RCLONE_CONFIG_SPACES_PROVIDER=DigitalOcean

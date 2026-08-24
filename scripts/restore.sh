@@ -33,7 +33,7 @@ if [ "$CONFIRM" != "restore" ]; then
 fi
 
 gunzip -c "/tmp/${BACKUP_FILE}" | docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U "${POSTGRES_USER}" "${POSTGRES_DB}"
+  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" "${POSTGRES_DB}"
 rm "/tmp/${BACKUP_FILE}"
 
 echo "[restore] Done."
