@@ -56,7 +56,24 @@ services:
     volumes:
       - kutip_qr_sessions:/app/qr-sessions
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
 volumes:
   kutip_postgres_data:
   kutip_redis_data:
   kutip_qr_sessions:
+  caddy_data:
+  caddy_config:
