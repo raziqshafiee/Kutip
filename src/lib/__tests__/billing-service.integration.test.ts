@@ -4,6 +4,7 @@ import { getBillingRuleForTenant, upsertBillingRuleForTenant } from '../billing/
 
 describe('billing rule service (tenant-scoped)', () => {
   beforeEach(async () => {
+    await prisma.client.deleteMany()
     await prisma.billingRule.deleteMany()
     await prisma.business.deleteMany()
   })
