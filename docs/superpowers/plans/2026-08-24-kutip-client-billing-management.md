@@ -117,12 +117,16 @@ git commit -m "feat: enforce one billing rule per tenant"
 
 **Files:**
 - Create: `src/lib/billing/service.ts`
+- Create: `src/lib/billing/actions.ts`
 - Test: `src/lib/__tests__/billing-service.unit.test.ts`
 - Test: `src/lib/__tests__/billing-service.integration.test.ts`
 
 **Interfaces:**
 - Consumes: `prisma` from `src/lib/prisma.ts`, `getOrCreateTenantForOrg` from `src/lib/tenant.ts`, the unique `BillingRule.tenantId` constraint from Task 1.
-- Produces: `validateBillingRuleInput(input): string | null`, `getBillingRuleForTenant(tenantId: string): Promise<BillingRule | null>`, `upsertBillingRuleForTenant(tenantId: string, input: BillingRuleInput): Promise<BillingRuleResult>`, and the client-facing `upsertBillingRuleAction(input: BillingRuleInput): Promise<BillingRuleResult>` — Task 3's billing rule page and form consume all four.
+- Produces from `src/lib/billing/service.ts` (a plain module — **no** `'use server'`): `validateBillingRuleInput(input): string | null`, `getBillingRuleForTenant(tenantId: string): Promise<BillingRule | null>`, `upsertBillingRuleForTenant(tenantId: string, input: BillingRuleInput): Promise<BillingRuleResult>`, and the `BillingRuleInput`/`BillingRuleResult` types.
+- Produces from `src/lib/billing/actions.ts` (marked `'use server'`): the client-facing `upsertBillingRuleAction(input: BillingRuleInput): Promise<BillingRuleResult>`.
+- Task 3's billing rule page and form consume all of the above.
+- **Why two files, not one:** a `'use server'` file may only export `async` functions — `validateBillingRuleInput` is synchronous, so it cannot live there. More importantly, every export from a `'use server'` file becomes a network-callable Server Reference; `getBillingRuleForTenant`/`upsertBillingRuleForTenant` take a raw `tenantId` with no auth check, so putting them in a `'use server'` file would let any client-side caller read or overwrite an arbitrary business's billing rule by passing a different `tenantId` — a direct violation of this plan's tenant-isolation constraint. Only `actions.ts` (which derives `tenantId` itself via Clerk `auth()`, never accepts one as a parameter) is safe to expose that way.
 
 - [ ] **Step 1: Write the failing unit test**
 
@@ -254,17 +258,12 @@ describe('billing rule service (tenant-scoped)', () => {
 Run: `npm run test:integration`
 Expected: FAIL — `src/lib/billing/service.ts` doesn't exist yet.
 
-- [ ] **Step 5: Implement the billing rule service**
+- [ ] **Step 5: Implement the billing rule service and its server action**
 
-Create `src/lib/billing/service.ts`:
+Create `src/lib/billing/service.ts` (plain module — do **not** add `'use server'` to this file; it exports a synchronous function and takes a raw `tenantId` with no auth check, so it must never become a client-callable Server Reference):
 
 ```ts
-'use server'
-
-import { auth } from '@clerk/nextjs/server'
-import { revalidatePath } from 'next/cache'
 import { prisma } from '../prisma'
-import { getOrCreateTenantForOrg } from '../tenant'
 import type { BillingFrequency, BillingRule } from '../../generated/prisma/client'
 
 export type BillingRuleInput = {
@@ -323,6 +322,18 @@ export async function upsertBillingRuleForTenant(
 
   return { ok: true }
 }
+```
+
+Create `src/lib/billing/actions.ts` (this file **is** `'use server'` — it exports only `upsertBillingRuleAction`, an async function that derives `tenantId` itself and never accepts one as a parameter):
+
+```ts
+'use server'
+
+import { auth } from '@clerk/nextjs/server'
+import { revalidatePath } from 'next/cache'
+import { getOrCreateTenantForOrg } from '../tenant'
+import { upsertBillingRuleForTenant } from './service'
+import type { BillingRuleInput, BillingRuleResult } from './service'
 
 async function resolveTenantId(): Promise<string | null> {
   const { orgId, orgSlug } = await auth()
@@ -359,7 +370,7 @@ Expected: PASS (all previous integration tests plus the new ones green).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/billing/service.ts src/lib/__tests__/billing-service.unit.test.ts src/lib/__tests__/billing-service.integration.test.ts
+git add src/lib/billing/service.ts src/lib/billing/actions.ts src/lib/__tests__/billing-service.unit.test.ts src/lib/__tests__/billing-service.integration.test.ts
 git commit -m "feat: add tenant-scoped billing rule service"
 ```
 
@@ -372,7 +383,7 @@ git commit -m "feat: add tenant-scoped billing rule service"
 - Create: `src/app/dashboard/billing-rules/billing-rule-form.tsx`
 
 **Interfaces:**
-- Consumes: `getOrCreateTenantForOrg` from `src/lib/tenant.ts`; `getBillingRuleForTenant`, `upsertBillingRuleAction`, `BillingRuleInput` from `src/lib/billing/service.ts` (Task 2).
+- Consumes: `getOrCreateTenantForOrg` from `src/lib/tenant.ts`; `getBillingRuleForTenant`, `BillingRuleInput` from `src/lib/billing/service.ts` (Task 2); `upsertBillingRuleAction` from `src/lib/billing/actions.ts` (Task 2).
 
 - [ ] **Step 1: Create the form component**
 
@@ -382,7 +393,7 @@ Create `src/app/dashboard/billing-rules/billing-rule-form.tsx`:
 'use client'
 
 import { useState } from 'react'
-import { upsertBillingRuleAction } from '@/lib/billing/service'
+import { upsertBillingRuleAction } from '@/lib/billing/actions'
 import type { BillingRuleInput } from '@/lib/billing/service'
 
 type Current = {
@@ -542,12 +553,16 @@ git commit -m "feat: add billing rules dashboard page"
 
 **Files:**
 - Create: `src/lib/clients/service.ts`
+- Create: `src/lib/clients/actions.ts`
 - Test: `src/lib/__tests__/clients-service.unit.test.ts`
 - Test: `src/lib/__tests__/clients-service.integration.test.ts`
 
 **Interfaces:**
 - Consumes: `prisma` from `src/lib/prisma.ts`, `getOrCreateTenantForOrg` from `src/lib/tenant.ts`, `isValidE164` from `src/lib/phone.ts`.
-- Produces: `validateClientInput(input): string | null`, `listClientsForTenant(tenantId: string): Promise<Client[]>`, `createClientForTenant(tenantId: string, input: ClientInput): Promise<ClientResult>`, `updateClientForTenant(tenantId: string, clientId: string, input: ClientInput): Promise<ClientResult>`, `deleteClientForTenant(tenantId: string, clientId: string): Promise<ClientResult>`, and the client-facing `createClientAction`, `updateClientAction`, `deleteClientAction` — Task 5's roster/add/edit pages consume all of these.
+- Produces from `src/lib/clients/service.ts` (a plain module — **no** `'use server'`): `validateClientInput(input): string | null`, `listClientsForTenant(tenantId: string): Promise<Client[]>`, `createClientForTenant(tenantId: string, input: ClientInput): Promise<ClientResult>`, `updateClientForTenant(tenantId: string, clientId: string, input: ClientInput): Promise<ClientResult>`, `deleteClientForTenant(tenantId: string, clientId: string): Promise<ClientResult>`, and the `ClientInput`/`ClientResult` types.
+- Produces from `src/lib/clients/actions.ts` (marked `'use server'`): the client-facing `createClientAction`, `updateClientAction`, `deleteClientAction`.
+- Task 5's roster/add/edit pages consume all of the above.
+- **Why two files, not one:** same reasoning as Task 2's billing service split — `validateClientInput` is synchronous (a `'use server'` file may only export `async` functions), and `listClientsForTenant`/`createClientForTenant`/`updateClientForTenant`/`deleteClientForTenant` take a raw `tenantId` with no auth check, so they must never live in a `'use server'` file where every export becomes a network-callable Server Reference. Only `actions.ts` (which derives `tenantId` itself via Clerk `auth()`) is safe to expose that way.
 
 - [ ] **Step 1: Write the failing unit test**
 
@@ -776,17 +791,12 @@ describe('client service (tenant-scoped)', () => {
 Run: `npm run test:integration`
 Expected: FAIL — `src/lib/clients/service.ts` doesn't exist yet.
 
-- [ ] **Step 5: Implement the client service**
+- [ ] **Step 5: Implement the client service and its server actions**
 
-Create `src/lib/clients/service.ts`:
+Create `src/lib/clients/service.ts` (plain module — do **not** add `'use server'` to this file; it exports a synchronous function and takes a raw `tenantId` with no auth check, so it must never become a client-callable Server Reference):
 
 ```ts
-'use server'
-
-import { auth } from '@clerk/nextjs/server'
-import { revalidatePath } from 'next/cache'
 import { prisma } from '../prisma'
-import { getOrCreateTenantForOrg } from '../tenant'
 import { isValidE164 } from '../phone'
 import type { Client } from '../../generated/prisma/client'
 
@@ -896,6 +906,18 @@ export async function deleteClientForTenant(
   await prisma.client.delete({ where: { id: clientId } })
   return { ok: true }
 }
+```
+
+Create `src/lib/clients/actions.ts` (this file **is** `'use server'` — it exports only the three async action functions, each of which derives `tenantId` itself and never accepts one as a parameter):
+
+```ts
+'use server'
+
+import { auth } from '@clerk/nextjs/server'
+import { revalidatePath } from 'next/cache'
+import { getOrCreateTenantForOrg } from '../tenant'
+import { createClientForTenant, updateClientForTenant, deleteClientForTenant } from './service'
+import type { ClientInput, ClientResult } from './service'
 
 async function resolveTenantId(): Promise<string | null> {
   const { orgId, orgSlug } = await auth()
@@ -957,7 +979,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/clients/service.ts src/lib/__tests__/clients-service.unit.test.ts src/lib/__tests__/clients-service.integration.test.ts
+git add src/lib/clients/service.ts src/lib/clients/actions.ts src/lib/__tests__/clients-service.unit.test.ts src/lib/__tests__/clients-service.integration.test.ts
 git commit -m "feat: add tenant-scoped client service with delete guard"
 ```
 
@@ -973,7 +995,7 @@ git commit -m "feat: add tenant-scoped client service with delete guard"
 - Create: `src/app/dashboard/clients/[clientId]/edit/page.tsx`
 
 **Interfaces:**
-- Consumes: `getOrCreateTenantForOrg` from `src/lib/tenant.ts`; `listClientsForTenant`, `createClientAction`, `updateClientAction`, `deleteClientAction`, `ClientInput` from `src/lib/clients/service.ts` (Task 4); `prisma` from `src/lib/prisma.ts` for the edit page's single-client lookup.
+- Consumes: `getOrCreateTenantForOrg` from `src/lib/tenant.ts`; `listClientsForTenant`, `ClientInput` from `src/lib/clients/service.ts` (Task 4); `createClientAction`, `updateClientAction`, `deleteClientAction` from `src/lib/clients/actions.ts` (Task 4); `prisma` from `src/lib/prisma.ts` for the edit page's single-client lookup.
 
 - [ ] **Step 1: Create the shared client form component**
 
@@ -984,7 +1006,7 @@ Create `src/app/dashboard/clients/client-form.tsx`:
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClientAction, updateClientAction } from '@/lib/clients/service'
+import { createClientAction, updateClientAction } from '@/lib/clients/actions'
 import type { ClientInput } from '@/lib/clients/service'
 
 type Current = {
@@ -1105,7 +1127,7 @@ Create `src/app/dashboard/clients/delete-client-button.tsx`:
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteClientAction } from '@/lib/clients/service'
+import { deleteClientAction } from '@/lib/clients/actions'
 
 export function DeleteClientButton({ clientId }: { clientId: string }) {
   const router = useRouter()
