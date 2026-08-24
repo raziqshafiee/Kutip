@@ -29,6 +29,7 @@
 - Create: `Dockerfile`
 - Create: `.dockerignore`
 - Create: `docker-compose.prod.yml`
+- Create: `.npmrc`
 
 **Interfaces:**
 - Consumes: `npm start` (`next start`, already in `package.json`) and `npm run workers` (`tsx src/lib/invoice/worker.ts`, already in `package.json`) as the two entrypoints the `app` and `worker` services run from the same built image.
@@ -56,7 +57,18 @@ docs
 .windsurf
 ```
 
-- [ ] **Step 2: Write the Dockerfile**
+- [ ] **Step 2: Write `.npmrc`**
+
+Create `.npmrc` at the repo root. `npm ci` inside a Docker build is more exposed to transient network flakiness than a local install (no resumable connections, one shot per layer) — these settings make it retry instead of failing outright on a single dropped connection:
+
+```
+fetch-retries=5
+fetch-retry-mintimeout=20000
+fetch-retry-maxtimeout=120000
+fetch-timeout=300000
+```
+
+- [ ] **Step 3: Write the Dockerfile**
 
 Create `Dockerfile`. This app's worker process runs TypeScript directly via `tsx` (no build step for the worker), so `tsx` and the full `node_modules` (not a pruned production-only set) stay in the runtime image — a slightly larger image is the accepted trade-off for a single-VPS MVP rather than a two-target build:
 
@@ -69,7 +81,7 @@ WORKDIR /app
 # Prisma's query engine needs openssl on Alpine.
 RUN apk add --no-cache openssl
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
@@ -89,7 +101,7 @@ EXPOSE 3000
 CMD ["npm", "start"]
 ```
 
-- [ ] **Step 3: Verify the image builds**
+- [ ] **Step 4: Verify the image builds**
 
 Run: `docker build -t kutip-app .`
 Expected: build completes successfully through all steps (`npm ci`, `prisma generate`, `npm run build`) with no errors, ending in `naming to docker.io/library/kutip-app`.
@@ -97,7 +109,7 @@ Expected: build completes successfully through all steps (`npm ci`, `prisma gene
 If the build fails at the `npm run build` step because Next.js attempts to statically render a page that touches the database, re-run with a placeholder connection string so Prisma's generated client has something to import against (this is not expected to be necessary):
 `docker build --build-arg DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" -t kutip-app .`
 
-- [ ] **Step 4: Write `docker-compose.prod.yml`**
+- [ ] **Step 5: Write `docker-compose.prod.yml`**
 
 Create `docker-compose.prod.yml`. `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` and `DATABASE_URL` are both read from `.env.production` (Task 3) — keep the credentials embedded in `DATABASE_URL` consistent with the standalone `POSTGRES_*` values, since Docker Compose does not cross-reference them automatically:
 
@@ -170,7 +182,7 @@ Note: `${POSTGRES_USER}` in the `postgres` service's `healthcheck` is expanded b
 
 `RUN_INVOICING_WORKERS=1` is required for `worker.ts`'s auto-start guard (`src/lib/invoice/worker.ts:33`) to actually call `startInvoicingWorkers()` when run via `tsx`.
 
-- [ ] **Step 5: Verify the compose file is syntactically valid**
+- [ ] **Step 6: Verify the compose file is syntactically valid**
 
 Docker Compose's `config` command requires every file referenced by an `env_file:` directive to physically exist on disk, even just to parse and validate the YAML — and it interpolates every `${VAR}` it finds anywhere in the file (including inside `healthcheck.test` array items), not only top-level `environment:` blocks. Since the real `.env.production` doesn't exist until a human deploys it (Task 3 only creates the tracked `.env.production.example` template), create a throwaway local stub first — it lands on the existing blanket `.env*` gitignore rule, so it never gets committed, and later tasks' compose-config checks can reuse it:
 
@@ -181,10 +193,10 @@ docker compose -f docker-compose.prod.yml config --quiet
 
 Expected: no output and exit code 0.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add Dockerfile .dockerignore docker-compose.prod.yml
+git add Dockerfile .dockerignore docker-compose.prod.yml .npmrc
 git commit -m "feat: add production Dockerfile and Docker Compose stack"
 ```
 
