@@ -31,12 +31,26 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-semibold tracking-tight">
           Welcome, {business.name}
         </h1>
-        <Link
-          href="/dashboard/settings"
-          className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm text-white"
-        >
-          Settings
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard/clients"
+            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm dark:border-zinc-700"
+          >
+            Clients
+          </Link>
+          <Link
+            href="/dashboard/billing-rules"
+            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm dark:border-zinc-700"
+          >
+            Billing Rules
+          </Link>
+          <Link
+            href="/dashboard/settings"
+            className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm text-white"
+          >
+            Settings
+          </Link>
+        </div>
       </div>
 
       <p className="mt-2 text-zinc-600 dark:text-zinc-400">
