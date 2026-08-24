@@ -30,10 +30,11 @@
 - Create: `.dockerignore`
 - Create: `docker-compose.prod.yml`
 - Create: `.npmrc`
+- Create: `scripts/deploy.sh`
 
 **Interfaces:**
-- Consumes: `npm start` (`next start`, already in `package.json`) and `npm run workers` (`tsx src/lib/invoice/worker.ts`, already in `package.json`) as the two entrypoints the `app` and `worker` services run from the same built image.
-- Produces: a `kutip-app` Docker image (built from `Dockerfile`) and a `docker-compose.prod.yml` stack with `postgres`, `redis`, `app`, `worker` services on one Docker network — Task 2 adds a `caddy` service to this same file; Task 4's backup script execs into the `postgres` service by name.
+- Consumes: `npm start` (`next start`, already in `package.json`) and `npm run workers` (`tsx src/lib/invoice/worker.ts`, already in `package.json`) as the two entrypoints the `app` and `worker` services run from the same built image; `next build`'s static inlining of `NEXT_PUBLIC_*` values (Next.js's own documented build-time behavior, not something this plan changes).
+- Produces: a `kutip-app` Docker image (built from `Dockerfile`) and a `docker-compose.prod.yml` stack with `postgres`, `redis`, `migrate`, `app`, `worker` services on one Docker network — Task 2 adds a `caddy` service to this same file; Task 4's backup script execs into the `postgres` service by name. Produces `scripts/deploy.sh`, the one correct entrypoint for every `docker compose` command against this stack (always passes `--env-file .env.production`) — Task 2's Caddy verification and Task 4's manual droplet steps should use it instead of calling `docker compose -f docker-compose.prod.yml` directly.
 
 - [ ] **Step 1: Write `.dockerignore`**
 
@@ -90,9 +91,19 @@ COPY . .
 # needed at build time.
 RUN npx prisma generate
 
-# None of Kutip's routes statically prerender data from the database (every
-# dashboard/API page reads Clerk's auth() first, which forces dynamic
-# rendering), so `next build` does not need a live DATABASE_URL.
+# Next.js inlines NEXT_PUBLIC_* values into the client bundle at `next build`
+# time (Next's own documented behavior, not runtime) -- so these must be
+# passed as build args, not left to .env.production (which only affects the
+# container's runtime environment, too late for the build that already ran).
+ARG NEXT_PUBLIC_BASE_URL
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL
+ENV NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL \
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL \
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL
+
 RUN npm run build
 
 ENV NODE_ENV=production
@@ -104,16 +115,17 @@ CMD ["npm", "start"]
 - [ ] **Step 4: Verify the image builds**
 
 Run: `docker build -t kutip-app .`
-Expected: build completes successfully through all steps (`npm ci`, `prisma generate`, `npm run build`) with no errors, ending in `naming to docker.io/library/kutip-app`.
+Expected: build completes successfully through all steps (`npm ci`, `prisma generate`, `npm run build`) with no errors, ending in `naming to docker.io/library/kutip-app`. The four `NEXT_PUBLIC_*` `ARG`s are optional at this stage (Docker doesn't require build args to be supplied — unset ones are just empty strings), so a plain `docker build` without `--build-arg` flags still succeeds; Step 6 below is where those values actually need to be real.
 
-If the build fails at the `npm run build` step because Next.js attempts to statically render a page that touches the database, re-run with a placeholder connection string so Prisma's generated client has something to import against (this is not expected to be necessary):
-`docker build --build-arg DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" -t kutip-app .`
+If the build fails at the `npm run build` step for an unrelated reason, this is not expected — Next.js does not execute page logic during the build (every dashboard/API page reads Clerk's `auth()` first, which forces dynamic rendering, so nothing is statically prerendered against a live database or a real Clerk key).
 
 - [ ] **Step 5: Write `docker-compose.prod.yml`**
 
 Create `docker-compose.prod.yml`. `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` and `DATABASE_URL` are both read from `.env.production` (Task 3) — keep the credentials embedded in `DATABASE_URL` consistent with the standalone `POSTGRES_*` values, since Docker Compose does not cross-reference them automatically:
 
 ```yaml
+name: kutip-prod
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -139,10 +151,32 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
     restart: unless-stopped
     env_file:
       - .env.production
@@ -151,6 +185,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     expose:
       - "3000"
 
@@ -158,6 +194,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL}
+        NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL}
     command: ["npm", "run", "workers"]
     restart: unless-stopped
     env_file:
@@ -169,6 +210,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - kutip_qr_sessions:/app/qr-sessions
 
@@ -178,31 +221,95 @@ volumes:
   kutip_qr_sessions:
 ```
 
-Note: this uses `$$POSTGRES_USER` (a doubled `$`), not `${POSTGRES_USER}`. Docker Compose's own `${VAR}` interpolation only reads a literal `.env` file in the project directory (or `--env-file`) — it does **not** read anything referenced via `env_file:`, which only injects variables into the *container's* runtime environment. Since this stack's only source of `POSTGRES_USER` is `.env.production` via `env_file:`, an unescaped `${POSTGRES_USER}` would resolve to an empty string at the Compose level, producing `pg_isready -U ` (no argument) — a broken healthcheck that fails forever and blocks `app`/`worker` from ever starting (both gate on `postgres: condition: service_healthy`). `$$` tells Compose to pass a literal `$POSTGRES_USER` through untouched, so it's expanded by the shell *inside the container* at healthcheck-run time instead, using the value `env_file` already injected there. (An earlier draft of this note had this backwards — corrected after the final review caught it by inspecting the actual resolved Compose output, not just the exit code.)
+**Why `name: kutip-prod`:** without an explicit project name, Docker Compose derives one from the current directory's basename — which is the same directory the dev stack's `docker-compose.yml` lives in. Both files then resolve `kutip_postgres_data` to the exact same physical volume and share the same project namespace, so a `down` against this file can tear down the *dev* stack's containers too (confirmed empirically while testing this fix: it happened twice). `name: kutip-prod` gives this stack its own namespace (`kutip-prod-postgres-1`, `kutip-prod_kutip_postgres_data`, etc.), fully isolated from `docker-compose.yml`'s `whatsappautobill-*` resources regardless of which directory either is run from.
+
+**Why a `migrate` service:** a fresh droplet's Postgres volume starts with no application tables — `prisma generate` (already in the Dockerfile) only generates client code, it never touches a database. Without a step that actually runs `prisma migrate deploy` against the real database, every query would fail forever. This one-shot service does that exactly once per `docker compose up`, and `restart: "no"` plus `app`/`worker`'s `migrate: condition: service_completed_successfully` dependency means the app never starts against an unmigrated schema.
+
+**Why `build.args` on `app`, `worker`, and `migrate` — all three, not just `app`:** Next.js inlines `NEXT_PUBLIC_*` values into the bundle at `next build` time, and all three services build independently from the same `Dockerfile` (each gets its own image unless Compose can reuse a cache layer), so all three need the same build args for a consistent result. `migrate` doesn't serve any pages and never reads these values at runtime, but giving it empty build args while `app`/`worker` get real ones is an easy way to end up with silently inconsistent images — keep all three identical.
+
+**Critical operational note:** `${VAR}` here is *Docker Compose's own* interpolation (different from the `$$POSTGRES_USER` container-shell escaping in the healthcheck above) — and Compose's own interpolation **only reads a literal `.env` file in the project directory, or an explicit `--env-file` flag. It never reads anything referenced via `env_file:`.** Since this stack's only source of truth is `.env.production` (via `env_file:`), running a plain `docker compose -f docker-compose.prod.yml build` (or `up -d --build`) — the command an operator would naturally reach for — silently resolves every `${NEXT_PUBLIC_*}` above to an empty string, defeating this entire fix. **Always use `scripts/deploy.sh` (Step 5a below) instead of calling `docker compose` directly against this file** — it always passes `--env-file .env.production` so this mistake isn't possible.
+
+Note: `$$POSTGRES_USER` in the `postgres` service's healthcheck (a doubled `$`, not `${POSTGRES_USER}`) is a *different* escaping mechanism — see the note directly below the code block once you spot it, but in short: it's deliberately NOT interpolated by Compose (unlike the `NEXT_PUBLIC_*` build args above, which *are*), so it survives to be expanded by the *container's own shell* at healthcheck-run time. An unescaped `${POSTGRES_USER}` there would resolve to an empty string at the Compose level — producing `pg_isready -U ` (no argument), a broken healthcheck that fails forever and blocks `app`/`worker`/`migrate` from ever starting (all three gate on `postgres: condition: service_healthy`). (An earlier draft of this note had the interpolation behavior backwards — corrected after the final review caught it by inspecting the actual resolved Compose output, not just checking the exit code.)
 
 `RUN_INVOICING_WORKERS=1` is required for `worker.ts`'s auto-start guard (`src/lib/invoice/worker.ts:33`) to actually call `startInvoicingWorkers()` when run via `tsx`.
 
+- [ ] **Step 5a: Write `scripts/deploy.sh`**
+
+Create `scripts/deploy.sh`. This is the one correct entrypoint for every `docker compose` command against this stack — it exists specifically so the `--env-file` requirement noted above is never forgotten:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The single correct entrypoint for building/starting/managing the production
+# stack. Always use this instead of calling `docker compose -f
+# docker-compose.prod.yml` directly.
+#
+# Docker Compose's ${VAR} interpolation (used for build.args in
+# docker-compose.prod.yml, so app/worker/migrate build with real
+# NEXT_PUBLIC_* values instead of empty ones) only reads a literal .env file
+# or an explicit --env-file flag -- it never reads env_file:-referenced
+# files. Since this stack's only source of truth is .env.production, running
+# a plain `docker compose -f docker-compose.prod.yml up -d --build` silently
+# builds broken images. This script always passes --env-file so that mistake
+# isn't possible.
+#
+# Usage: ./scripts/deploy.sh <any docker compose subcommand and args>
+#   ./scripts/deploy.sh up -d --build
+#   ./scripts/deploy.sh ps
+#   ./scripts/deploy.sh logs -f app
+#   ./scripts/deploy.sh down
+
+if [ ! -f .env.production ]; then
+  echo "Error: .env.production not found in the current directory." >&2
+  echo "Copy .env.production.example to .env.production and fill in real values first." >&2
+  exit 1
+fi
+
+exec docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
+```
+
+Run: `chmod +x scripts/deploy.sh`
+
 - [ ] **Step 6: Verify the compose file is syntactically valid**
 
-Docker Compose's `config` command requires every file referenced by an `env_file:` directive to physically exist on disk, even just to parse and validate the YAML — and it interpolates every `${VAR}` it finds anywhere in the file (including inside `healthcheck.test` array items), not only top-level `environment:` blocks. Since the real `.env.production` doesn't exist until a human deploys it (Task 3 only creates the tracked `.env.production.example` template), create a throwaway local stub first — it lands on the existing blanket `.env*` gitignore rule, so it never gets committed, and later tasks' compose-config checks can reuse it:
+Docker Compose's `config` command requires every file referenced by an `env_file:` directive to physically exist on disk, even just to parse and validate the YAML — and it interpolates every `${VAR}` it finds anywhere in the file (including inside `healthcheck.test` array items and `build.args`), not only top-level `environment:` blocks. Since the real `.env.production` doesn't exist until a human deploys it (Task 3 only creates the tracked `.env.production.example` template), create a throwaway local stub first — it lands on the existing blanket `.env*` gitignore rule, so it never gets committed, and later tasks' compose-config checks can reuse it. Use `scripts/deploy.sh` (Step 5a) rather than calling `docker compose` directly, so `--env-file` is never forgotten:
 
 ```bash
-echo 'POSTGRES_USER=kutip' > .env.production
-docker compose -f docker-compose.prod.yml config --quiet
+cat > .env.production <<'EOF'
+POSTGRES_USER=kutip
+NEXT_PUBLIC_BASE_URL=https://kutip.example.com
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dummy
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+EOF
+./scripts/deploy.sh config --quiet
 ```
 
-Expected: no output and exit code 0. This only proves the YAML parses and every `env_file:` path exists — it does **not** prove `${VAR}`-style interpolation resolved correctly, since `--quiet` suppresses interpolation warnings along with everything else. Also inspect the actual resolved healthcheck command:
+Expected: no output and exit code 0, with **no** `"variable is not set"` warnings for `POSTGRES_USER` or any `NEXT_PUBLIC_*` name (those warnings only disappear once the values actually resolve — if you see them, the stub file above is missing a key or `deploy.sh` isn't being used). This only proves the YAML parses and every `env_file:` path exists — it does **not** prove `${VAR}`-style interpolation resolved correctly on its own, since `--quiet` suppresses interpolation warnings along with everything else. Also inspect the actual resolved healthcheck command and the `migrate` service's build args:
 
 ```bash
-docker compose -f docker-compose.prod.yml config | grep -A2 "test:"
+./scripts/deploy.sh config | grep -A2 "test:"
+./scripts/deploy.sh config | grep -A6 "^  migrate:"
 ```
 
-Expected: the postgres service's line reads `pg_isready -U $POSTGRES_USER` (a single `$`, literal — Compose has passed the doubled `$$` through as an escape, leaving one `$` for the container shell to expand at runtime). If it instead shows `pg_isready -U ` with nothing after `-U`, the `$$` escaping in the Dockerfile compose block above was lost — go back and fix it before continuing.
+Expected: the postgres service's healthcheck line reads `pg_isready -U $$POSTGRES_USER` (still a doubled `$` — this Compose version's `config` output re-escapes for round-trip safety rather than showing the single-`$` value it will actually pass to the container; this is a printing quirk, not a bug). If it instead shows `pg_isready -U ` with nothing after `-U`, or a single unescaped `$POSTGRES_USER`, the `$$` escaping in the Dockerfile compose block above was lost — go back and fix it before continuing. The `migrate` service's block should show `NEXT_PUBLIC_BASE_URL: https://kutip.example.com` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy` (matching the stub values above, not empty strings) — if either shows as empty, the `build.args` wiring or the `--env-file` flag was lost.
+
+Because `config`'s printed output is one layer removed from what actually reaches the container, the authoritative check is what Docker itself resolves at container-creation time:
+
+```bash
+./scripts/deploy.sh up -d postgres
+docker inspect --format '{{json .Config.Healthcheck.Test}}' $(docker compose -f docker-compose.prod.yml ps -q postgres)
+./scripts/deploy.sh ps postgres
+./scripts/deploy.sh down
+```
+
+Expected: `docker inspect` prints `["CMD-SHELL","pg_isready -U $POSTGRES_USER"]` — a single `$`, this time for real, since this is what Docker actually stored on the container — and `ps` shows `postgres` reaching `(healthy)`. This is the check that actually proves the fix works end to end, not just that `config` prints something plausible.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add Dockerfile .dockerignore docker-compose.prod.yml .npmrc
+git add Dockerfile .dockerignore docker-compose.prod.yml .npmrc scripts/deploy.sh
 git commit -m "feat: add production Dockerfile and Docker Compose stack"
 ```
 
@@ -268,11 +375,11 @@ The `app` service (Task 1) already uses `expose:` rather than `ports:`, so it st
 
 - [ ] **Step 3: Verify the compose file is still valid**
 
-Same caveat as Task 1 Step 6 — Compose requires the `env_file:`-referenced file to exist, and `--quiet` hides interpolation warnings, so this only proves the YAML parses (see Task 1 Step 6 for the deeper resolved-config check, which is what actually caught the `$$POSTGRES_USER` escaping bug). A local `.env.production` stub should already exist from Task 1's verification (gitignored, untracked); if it doesn't (e.g. fresh checkout), recreate it first:
+Same caveat as Task 1 Step 6 — Compose requires the `env_file:`-referenced file to exist, and `--quiet` hides interpolation warnings, so this only proves the YAML parses (see Task 1 Step 6 for the deeper resolved-config check, which is what actually caught the `$$POSTGRES_USER` escaping bug and the `NEXT_PUBLIC_*` build-args gap). A local `.env.production` stub should already exist from Task 1's verification (gitignored, untracked); if it doesn't (e.g. fresh checkout), recreate it first. Use `scripts/deploy.sh` (Task 1 Step 5a), not `docker compose` directly:
 
 ```bash
 [ -f .env.production ] || echo 'POSTGRES_USER=kutip' > .env.production
-docker compose -f docker-compose.prod.yml config --quiet
+./scripts/deploy.sh config --quiet
 ```
 
 Expected: no output, exit code 0.
@@ -297,7 +404,7 @@ git commit -m "feat: add Caddy reverse proxy with automatic TLS"
 - Modify: `.gitignore`
 
 **Interfaces:**
-- Produces: `.env.production.example`, the documented template for every environment variable Tasks 1, 2, and 4 read via `env_file: .env.production` — a real `.env.production` (never committed) is copied from this template on the droplet before `docker compose -f docker-compose.prod.yml up -d` runs.
+- Produces: `.env.production.example`, the documented template for every environment variable Tasks 1, 2, and 4 read via `env_file: .env.production` — a real `.env.production` (never committed) is copied from this template on the droplet before `./scripts/deploy.sh up -d --build` (Task 1 Step 5a) runs.
 
 - [ ] **Step 1: Confirm `.env.production` is gitignored**
 
@@ -360,12 +467,17 @@ BACKUP_RETENTION_DAYS="14"
 
 - [ ] **Step 3: Verify every variable this plan's files reference is covered**
 
-Run: `grep -oE '\$\{?[A-Z_]+\}?' docker-compose.prod.yml Caddyfile | tr -d '{}$' | sort -u`
+Run: `grep -hoE '\$\{?[A-Z_]+\}?' docker-compose.prod.yml Caddyfile | tr -d '{}$' | sort -u` (the `-h` suppresses filename prefixes so the output is plain variable names)
 Expected output (every name printed here must appear as a key in `.env.production.example` above):
 ```
 DOMAIN
+NEXT_PUBLIC_BASE_URL
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+NEXT_PUBLIC_CLERK_SIGN_IN_URL
+NEXT_PUBLIC_CLERK_SIGN_UP_URL
 POSTGRES_USER
 ```
+(The four `NEXT_PUBLIC_*` names come from `docker-compose.prod.yml`'s `build.args` blocks, added when the final whole-branch review caught that these values were frozen empty at Docker build time — see Task 1 Step 5's note.)
 
 - [ ] **Step 4: Commit**
 
@@ -407,7 +519,7 @@ RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 
 echo "[backup] Dumping ${POSTGRES_DB}..."
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "/tmp/${BACKUP_FILE}"
+  pg_dump --clean --if-exists -U "${POSTGRES_USER}" "${POSTGRES_DB}" | gzip > "/tmp/${BACKUP_FILE}"
 
 export RCLONE_CONFIG_SPACES_TYPE=s3
 export RCLONE_CONFIG_SPACES_PROVIDER=DigitalOcean
@@ -426,13 +538,15 @@ rclone delete "spaces:${SPACES_BUCKET}/backups/" --min-age "${RETENTION_DAYS}d"
 echo "[backup] Done: ${BACKUP_FILE}"
 ```
 
+`--clean --if-exists` makes the dump itself self-contained and safe to replay onto a database that already has the same schema (it emits `DROP ... IF EXISTS` before each `CREATE`), which is what makes `restore.sh`'s `-v ON_ERROR_STOP=1` (Step 3 below) actually meaningful — without `--clean --if-exists`, replaying a dump onto a non-empty database produces a wall of "already exists" errors that look identical to real failures, masking them.
+
 - [ ] **Step 2: Make it executable and verify the dump pipeline against the local dev stack**
 
 This validates the `pg_dump | gzip` half of the script (the part reachable without real DigitalOcean Spaces credentials) against the local dev Postgres already running via `docker-compose.yml` from the foundation plan:
 
 ```bash
 chmod +x scripts/backup.sh scripts/restore.sh
-docker compose exec -T postgres pg_dump -U kutip kutip_dev | gzip > /tmp/test-backup.sql.gz
+docker compose exec -T postgres pg_dump --clean --if-exists -U kutip kutip_dev | gzip > /tmp/test-backup.sql.gz
 gzip -t /tmp/test-backup.sql.gz && echo "OK: valid gzip archive"
 rm /tmp/test-backup.sql.gz
 ```
@@ -479,24 +593,30 @@ if [ "$CONFIRM" != "restore" ]; then
 fi
 
 gunzip -c "/tmp/${BACKUP_FILE}" | docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -U "${POSTGRES_USER}" "${POSTGRES_DB}"
+  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" "${POSTGRES_DB}"
 rm "/tmp/${BACKUP_FILE}"
 
 echo "[restore] Done."
 ```
 
-- [ ] **Step 4: Verify the restore pipeline's local half**
+`-v ON_ERROR_STOP=1` makes `psql` actually abort on the first real SQL error, which `set -euo pipefail` at the top of this script then correctly propagates as a non-zero exit — without it, `psql` can hit every statement failing and still exit 0, printing "Done." on a restore that never happened. This is the single most important line in this script: a restore script that can silently lie about success is worse than no restore script.
 
-Symmetric to Step 2 — confirms `gunzip | psql` round-trips correctly against the local dev stack, without touching Spaces:
+- [ ] **Step 4: Verify the restore pipeline's local half against a genuinely fresh database**
+
+Symmetric to Step 2, but replaying onto a truly empty, freshly-created database — not the dump's own source database — since that's the only way to prove `-v ON_ERROR_STOP=1` actually catches a real failure rather than being masked by "already exists" noise:
 
 ```bash
-docker compose exec -T postgres pg_dump -U kutip kutip_dev | gzip > /tmp/test-backup.sql.gz
-gunzip -c /tmp/test-backup.sql.gz | docker compose exec -T postgres psql -U kutip kutip_dev > /tmp/restore-output.log 2>&1
-tail -5 /tmp/restore-output.log
+docker compose exec -T postgres pg_dump --clean --if-exists -U kutip kutip_dev | gzip > /tmp/test-backup.sql.gz
+docker compose exec -T postgres psql -U kutip -d kutip_dev -c "CREATE DATABASE kutip_test_restore;"
+gunzip -c /tmp/test-backup.sql.gz | docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U kutip kutip_test_restore > /tmp/restore-output.log 2>&1
+echo "Exit code: $?"
+tail -10 /tmp/restore-output.log
+docker compose exec -T postgres psql -U kutip -d kutip_test_restore -c "\dt"
+docker compose exec -T postgres psql -U kutip -d kutip_dev -c "DROP DATABASE kutip_test_restore;"
 rm /tmp/test-backup.sql.gz /tmp/restore-output.log
 ```
 
-Expected: the tail shows normal `psql` statement output (e.g. `CREATE TABLE`, `ALTER TABLE`, `COPY N` lines) and no `ERROR:` lines. `psql` replaying a dump of a database against itself is expected to emit some "already exists" notices depending on dump mode — that's fine; only `ERROR:` lines indicate a real problem.
+Expected: exit code 0, no `ERROR:` lines in the tail, and `\dt` shows all expected application tables present in the freshly-restored `kutip_test_restore` database before it's dropped. Note `-d kutip_dev` is required on the `CREATE DATABASE`/`DROP DATABASE` commands — Postgres defaults to a database named after the connecting user (`kutip`) when no `-d`/dbname is given, and that database doesn't exist in this stack.
 
 - [ ] **Step 5: Manual verification on the real droplet (post-provisioning)**
 
@@ -532,7 +652,7 @@ No files change in this repo for this task — it is entirely external account c
 - [ ] **Step 2:** Under the Organizations settings tab, enable **Organizations** on the production instance (same toggle as development — it does not carry over automatically).
 - [ ] **Step 3:** Copy the production `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (they start with `sk_live_...` / `pk_live_...`, not `sk_test_...` / `pk_test_...`) into `.env.production` on the droplet.
 - [ ] **Step 4:** In the Clerk dashboard's production instance settings, set the allowed redirect/sign-in URLs to the live domain (`https://yourdomain.com`).
-- [ ] **Step 5:** After `docker compose -f docker-compose.prod.yml up -d` is running (Task 1+2, on the droplet), visit `https://yourdomain.com/sign-up` and confirm a new account can be created and an Organization set up against the production Clerk instance.
+- [ ] **Step 5:** After `./scripts/deploy.sh up -d --build` is running (Task 1+2, on the droplet), visit `https://yourdomain.com/sign-up` and confirm a new account can be created and an Organization set up against the production Clerk instance.
 
 ---
 
@@ -601,7 +721,7 @@ git commit -m "feat: add health-check script and confirm restart policies"
 
 ## Definition of Done
 
-- `docker compose -f docker-compose.prod.yml up -d` starts `postgres`, `redis`, `app`, `worker`, and `caddy`, all healthy.
+- `./scripts/deploy.sh up -d --build` (never a plain `docker compose -f docker-compose.prod.yml` — see Task 1 Step 5's operational note) runs `migrate` to completion, then starts `postgres`, `redis`, `app`, `worker`, and `caddy`, all healthy.
 - The app is reachable over HTTPS at the live domain via Caddy's automatic TLS.
 - Production Clerk, WhatsApp Cloud API, and ToyyibPay are configured with live credentials and correct webhook URLs (Tasks 5-6).
 - `scripts/backup.sh` successfully uploads a dump to DigitalOcean Spaces and is scheduled via cron; `scripts/restore.sh` has been exercised at least once against a real backup.
