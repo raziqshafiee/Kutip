@@ -3,6 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --kutip-cream: oklch(97% 0.015 80);
+  --kutip-ink: oklch(24% 0.02 50);
+  --kutip-ink-muted: oklch(40% 0.02 50);
+  --kutip-green: oklch(52% 0.10 145);
+  --kutip-green-dark: oklch(22% 0.05 145);
+  --kutip-badge: oklch(93% 0.04 100);
+  --kutip-warm-line: oklch(90% 0.02 80);
 }
 
 @theme inline {
@@ -10,6 +17,14 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-instrument-serif);
+  --color-cream: var(--kutip-cream);
+  --color-ink: var(--kutip-ink);
+  --color-ink-muted: var(--kutip-ink-muted);
+  --color-kgreen: var(--kutip-green);
+  --color-kgreen-dark: var(--kutip-green-dark);
+  --color-badge: var(--kutip-badge);
+  --color-warm-line: var(--kutip-warm-line);
 }
 
 @media (prefers-color-scheme: dark) {
