@@ -172,8 +172,14 @@ Note: `${POSTGRES_USER}` in the `postgres` service's `healthcheck` is expanded b
 
 - [ ] **Step 5: Verify the compose file is syntactically valid**
 
-Run: `docker compose -f docker-compose.prod.yml config --quiet`
-Expected: no output and exit code 0 (this only validates YAML structure and service references; it does not require `.env.production` to exist yet since no `${...}` interpolation happens at the Compose-file level in this stack).
+Docker Compose's `config` command requires every file referenced by an `env_file:` directive to physically exist on disk, even just to parse and validate the YAML — and it interpolates every `${VAR}` it finds anywhere in the file (including inside `healthcheck.test` array items), not only top-level `environment:` blocks. Since the real `.env.production` doesn't exist until a human deploys it (Task 3 only creates the tracked `.env.production.example` template), create a throwaway local stub first — it lands on the existing blanket `.env*` gitignore rule, so it never gets committed, and later tasks' compose-config checks can reuse it:
+
+```bash
+echo 'POSTGRES_USER=kutip' > .env.production
+docker compose -f docker-compose.prod.yml config --quiet
+```
+
+Expected: no output and exit code 0.
 
 - [ ] **Step 6: Commit**
 
@@ -181,6 +187,8 @@ Expected: no output and exit code 0 (this only validates YAML structure and serv
 git add Dockerfile .dockerignore docker-compose.prod.yml
 git commit -m "feat: add production Dockerfile and Docker Compose stack"
 ```
+
+(Do not commit `.env.production` itself — it's gitignored and `git add` above only stages the three named files.)
 
 ---
 
@@ -242,7 +250,13 @@ The `app` service (Task 1) already uses `expose:` rather than `ports:`, so it st
 
 - [ ] **Step 3: Verify the compose file is still valid**
 
-Run: `docker compose -f docker-compose.prod.yml config --quiet`
+Same caveat as Task 1 Step 5 — Compose requires the `env_file:`-referenced file to exist. A local `.env.production` stub should already exist from Task 1's verification (gitignored, untracked); if it doesn't (e.g. fresh checkout), recreate it first:
+
+```bash
+[ -f .env.production ] || echo 'POSTGRES_USER=kutip' > .env.production
+docker compose -f docker-compose.prod.yml config --quiet
+```
+
 Expected: no output, exit code 0.
 
 - [ ] **Step 4: Document the DNS requirement**
