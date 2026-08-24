@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Business {
+  id                     String          @id @default(cuid())
+  clerkOrgId             String          @unique
+  name                   String
+  whatsappChannel        WhatsAppChannel @default(NONE)
+  cloudApiPhoneNumberId  String?
+  cloudApiAccessToken    String?
+  cloudApiTemplateName   String?
+  qrSessionId            String?
+  toyyibpayUserSecretKey String?
+  toyyibpayCategoryCode  String?
+  toyyibpaySandbox       Boolean         @default(true)
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  clients      Client[]
+  billingRules BillingRule[]
+  invoices     Invoice[]
+}
+
+model Client {
+  id              String   @id @default(cuid())
+  tenantId        String
+  business        Business @relation(fields: [tenantId], references: [id])
+  name            String
+  phoneE164       String
+  serviceTier     String?
+  billingAmount   Decimal  @db.Decimal(10, 2)
+  billingCycleDay Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  invoices Invoice[]
+
+  @@index([tenantId])
+}
+
+enum WhatsAppChannel {
+  NONE
+  CLOUD_API
+  QR_SESSION
+}
+
+enum BillingFrequency {
+  MONTHLY
+  QUARTERLY
+  CUSTOM
+}
+
+model BillingRule {
+  id              String            @id @default(cuid())
+  tenantId        String            @unique
+  business        Business          @relation(fields: [tenantId], references: [id])
+  frequency       BillingFrequency
+  gracePeriodDays Int               @default(0)
+  lateFeeAmount   Decimal?          @db.Decimal(10, 2)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  ARCHIVED
+}
+
+model Invoice {
+  id        String        @id @default(cuid())
+  tenantId  String
+  business  Business      @relation(fields: [tenantId], references: [id])
+  clientId  String
+  client    Client        @relation(fields: [clientId], references: [id])
+  amount    Decimal       @db.Decimal(10, 2)
+  status    InvoiceStatus @default(DRAFT)
+  dueDate   DateTime
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  payments  Payment[]
+  reminders ReminderJob[]
+  messages  MessageLog[]
+
+  @@index([tenantId])
+  @@unique([clientId, dueDate])
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  gatewayRef  String
+  amount      Decimal       @db.Decimal(10, 2)
+  status      PaymentStatus @default(PENDING)
+  externalRef String?
+  billCode    String?
+  hashValue   String?
+  paidAt      DateTime      @default(now())
+
+  @@index([invoiceId])
+}
+
+enum ReminderStage {
+  T_MINUS_3
+  T_0
+  T_PLUS_3
+  T_PLUS_7
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  SKIPPED
+}
+
+model ReminderJob {
+  id           String         @id @default(cuid())
+  invoiceId    String
+  invoice      Invoice        @relation(fields: [invoiceId], references: [id])
+  stage        ReminderStage
+  scheduledFor DateTime
+  status       ReminderStatus @default(PENDING)
+
+  @@index([invoiceId])
+}
+
+enum MessageChannel {
+  WHATSAPP_CLOUD_API
+  WHATSAPP_QR_SESSION
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model MessageLog {
+  id        String         @id @default(cuid())
+  invoiceId String
+  invoice   Invoice        @relation(fields: [invoiceId], references: [id])
+  channel   MessageChannel
+  template  String
+  status            DeliveryStatus @default(QUEUED)
+  providerMessageId String?
+  sentAt            DateTime?
+
+  @@index([invoiceId])
+}
