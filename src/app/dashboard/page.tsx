@@ -1,6 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { getOrCreateTenantForOrg } from '@/lib/tenant'
 import { computePipelineMetrics } from '@/lib/dashboard/metrics'
 
@@ -27,31 +26,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-6 py-12">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Welcome, {business.name}
-        </h1>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard/clients"
-            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm dark:border-zinc-700"
-          >
-            Clients
-          </Link>
-          <Link
-            href="/dashboard/billing-rules"
-            className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm dark:border-zinc-700"
-          >
-            Billing Rules
-          </Link>
-          <Link
-            href="/dashboard/settings"
-            className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm text-white"
-          >
-            Settings
-          </Link>
-        </div>
-      </div>
+      <h1 className="text-3xl font-semibold tracking-tight">Welcome, {business.name}</h1>
 
       <p className="mt-2 text-zinc-600 dark:text-zinc-400">
         Financial pipeline overview — {metrics.invoiceCount} invoice(s).
